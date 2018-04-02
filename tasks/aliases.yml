@@ -12,12 +12,13 @@ default:
 # create the library
 build:
   - 'clean:dist'
-  - 'copy:dist'
-  - 'concat:dist'
-  - 'umd'
-  - 'uglify:dist'
   - 'sass:dist'
   - 'cssmin'
+  - 'copy:dist'
+  - 'concat:dist'
+  - 'template:dist'
+  - 'umd'
+  - 'uglify:dist'
 
 # prepare the website
 public:

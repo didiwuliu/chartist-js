@@ -4,8 +4,10 @@
  * @module Chartist.Base
  */
 /* global Chartist */
-(function(window, document, Chartist) {
+(function(globalRoot, Chartist) {
   'use strict';
+
+  var window = globalRoot.window;
 
   // TODO: Currently we need to re-draw the chart on window resize. This is usually very bad and will affect performance.
   // This is done because we can't work with relative coordinates when drawing the chart because SVG Path does not
@@ -17,11 +19,39 @@
    * Updates the chart which currently does a full reconstruction of the SVG DOM
    *
    * @param {Object} [data] Optional data you'd like to set for the chart before it will update. If not specified the update method will use the data that is already configured with the chart.
+   * @param {Object} [options] Optional options you'd like to add to the previous options for the chart before it will update. If not specified the update method will use the options that have been already configured with the chart.
+   * @param {Boolean} [override] If set to true, the passed options will be used to extend the options that have been configured already. Otherwise the chart default options will be used as the base
    * @memberof Chartist.Base
    */
-  function update(data) {
-    this.data = data || this.data;
-    this.createChart(this.optionsProvider.currentOptions);
+  function update(data, options, override) {
+    if(data) {
+      this.data = data || {};
+      this.data.labels = this.data.labels || [];
+      this.data.series = this.data.series || [];
+      // Event for data transformation that allows to manipulate the data before it gets rendered in the charts
+      this.eventEmitter.emit('data', {
+        type: 'update',
+        data: this.data
+      });
+    }
+
+    if(options) {
+      this.options = Chartist.extend({}, override ? this.options : this.defaultOptions, options);
+
+      // If chartist was not initialized yet, we just set the options and leave the rest to the initialization
+      // Otherwise we re-create the optionsProvider at this point
+      if(!this.initializeTimeoutId) {
+        this.optionsProvider.removeMediaQueryListeners();
+        this.optionsProvider = Chartist.optionsProvider(this.options, this.responsiveOptions, this.eventEmitter);
+      }
+    }
+
+    // Only re-created the chart if it has been initialized yet
+    if(!this.initializeTimeoutId) {
+      this.createChart(this.optionsProvider.getCurrentOptions());
+    }
+
+    // Return a reference to the chart object to chain up calls
     return this;
   }
 
@@ -31,8 +61,15 @@
    * @memberof Chartist.Base
    */
   function detach() {
-    window.removeEventListener('resize', this.resizeListener);
-    this.optionsProvider.removeMediaQueryListeners();
+    // Only detach if initialization already occurred on this chart. If this chart still hasn't initialized (therefore
+    // the initializationTimeoutId is still a valid timeout reference, we will clear the timeout
+    if(!this.initializeTimeoutId) {
+      window.removeEventListener('resize', this.resizeListener);
+      this.optionsProvider.removeMediaQueryListeners();
+    } else {
+      window.clearTimeout(this.initializeTimeoutId);
+    }
+
     return this;
   }
 
@@ -67,6 +104,10 @@
     // Obtain current options based on matching media queries (if responsive options are given)
     // This will also register a listener that is re-creating the chart based on media changes
     this.optionsProvider = Chartist.optionsProvider(this.options, this.responsiveOptions, this.eventEmitter);
+    // Register options change listener that will trigger a chart update
+    this.eventEmitter.addEventHandler('optionsChanged', function() {
+      this.update();
+    }.bind(this));
 
     // Before the first chart creation we need to register us with all plugins that are configured
     // Initialize all relevant plugins with our chart object and the plugin options specified in the config
@@ -80,8 +121,14 @@
       }.bind(this));
     }
 
+    // Event for data transformation that allows to manipulate the data before it gets rendered in the charts
+    this.eventEmitter.emit('data', {
+      type: 'initial',
+      data: this.data
+    });
+
     // Create the first chart
-    this.createChart(this.optionsProvider.currentOptions);
+    this.createChart(this.optionsProvider.getCurrentOptions());
 
     // As chart is initialized from the event loop now we can reset our timeout reference
     // This is important if the chart gets initialized on the same element twice
@@ -93,13 +140,17 @@
    *
    * @param query
    * @param data
+   * @param defaultOptions
    * @param options
    * @param responsiveOptions
    * @constructor
    */
-  function Base(query, data, options, responsiveOptions) {
+  function Base(query, data, defaultOptions, options, responsiveOptions) {
     this.container = Chartist.querySelector(query);
-    this.data = data;
+    this.data = data || {};
+    this.data.labels = this.data.labels || [];
+    this.data.series = this.data.series || [];
+    this.defaultOptions = defaultOptions;
     this.options = options;
     this.responsiveOptions = responsiveOptions;
     this.eventEmitter = Chartist.EventEmitter();
@@ -112,14 +163,7 @@
     if(this.container) {
       // If chartist was already initialized in this container we are detaching all event listeners first
       if(this.container.__chartist__) {
-        if(this.container.__chartist__.initializeTimeoutId) {
-          // If the initializeTimeoutId is still set we can safely assume that the initialization function has not
-          // been called yet from the event loop. Therefore we should cancel the timeout and don't need to detach
-          window.clearTimeout(this.container.__chartist__.initializeTimeoutId);
-        } else {
-          // The timeout reference has already been reset which means we need to detach the old chart first
-          this.container.__chartist__.detach();
-        }
+        this.container.__chartist__.detach();
       }
 
       this.container.__chartist__ = this;
@@ -148,4 +192,4 @@
     supportsForeignObject: false
   });
 
-}(window, document, Chartist));
+}(this, Chartist));

@@ -26,11 +26,15 @@
     "beforeEach": false,
     "browser": false,
     "describe": false,
+    "fdescribe": false,
     "expect": false,
     "inject": false,
     "it": false,
+    "fit": false,
     "jasmine": false,
-    "spyOn": false
+    "spyOn": false,
+    "$": false,
+    "Chartist": false
   }
 }
 
